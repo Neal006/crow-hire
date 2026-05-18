@@ -6,8 +6,15 @@ import { useState, useEffect, useCallback } from 'react';
 import { getTemplate, createInitialState } from '@/lib/templates';
 import { processMessage } from '@/lib/agent';
 import { SessionState, Message } from '@/lib/types';
+import { trackSession } from '@/lib/analytics';
 import MockProduct from '@/components/MockProduct';
 import ChatPanel from '@/components/ChatPanel';
+
+function inferInputType(templateId: string): 'url' | 'spec' | 'template' {
+  if (templateId.startsWith('url-')) return 'url';
+  if (templateId.startsWith('spec-')) return 'spec';
+  return 'template';
+}
 
 function DemoContent() {
   const searchParams = useSearchParams();
@@ -38,6 +45,32 @@ function DemoContent() {
   useEffect(() => {
     if (typeof window === 'undefined' || !state) return;
     localStorage.setItem(`crow-session-${sessionId}`, JSON.stringify(state));
+
+    const template = getTemplate(state.templateId);
+    const saved = localStorage.getItem(`crow-template-${state.templateId}`);
+    let templateName = template?.productName || 'Unknown';
+    if (!template && saved) {
+      try {
+        const t = JSON.parse(saved);
+        templateName = t.productName || t.name || 'Custom';
+      } catch {}
+    }
+
+    const userQueries = state.messages
+      .filter((m) => m.role === 'user')
+      .map((m) => m.content);
+
+    trackSession({
+      sessionId,
+      templateId: state.templateId,
+      templateName,
+      inputType: inferInputType(state.templateId),
+      createdAt: state.messages[0]?.timestamp || Date.now(),
+      lastActivity: Date.now(),
+      messageCount: state.messages.length,
+      firstActionDone: state.firstActionDone,
+      userQueries,
+    });
   }, [state, sessionId]);
 
   const handleSend = useCallback((content: string) => {
