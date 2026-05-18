@@ -2,10 +2,6 @@ import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || '',
-});
-
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -18,6 +14,8 @@ export async function POST(request: Request) {
     if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json({ error: 'OpenAI API key not configured' }, { status: 503 });
     }
+
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
     const systemPrompt = `You are the Crow AI agent running in a sandbox demo. You help users interact with a product called "${context}". You have access to tools that manipulate mock data. Be helpful, direct, and action-oriented. Keep responses under 3 sentences unless explaining something complex.`;
 
