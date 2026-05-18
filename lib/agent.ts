@@ -1,6 +1,23 @@
 import { SessionState, Action } from './types';
 import { getTemplate } from './templates';
 
+const JAILBREAK_PATTERNS = [
+  /ignore previous instructions/i,
+  /ignore all (prior|previous) (instructions|rules)/i,
+  /you are now .* mode/i,
+  /pretend you are/i,
+  /simulate being/i,
+  /act as (if|though) you are/i,
+  /disregard (all|any) (safety|constraints|rules)/i,
+  /system prompt/i,
+  /developer mode/i,
+  /DAN mode/i,
+];
+
+const PROFANITY_PATTERNS = [
+  /\b(f+u+c+k+|s+h+i+t+|a+s+s+h+o+l+e+|b+i+t+c+h+|d+i+c+k+)\b/i,
+];
+
 export function processMessage(
   message: string,
   state: SessionState
@@ -14,6 +31,22 @@ export function processMessage(
   let newState = { ...state, messages: [...state.messages] };
   let action: Action | undefined;
 
+  // Prompt injection guard
+  if (JAILBREAK_PATTERNS.some((p) => p.test(message))) {
+    return {
+      reply: `I can only help with ${template.productName} tasks in this sandbox. Let me know if you'd like to see a demo of Crow's capabilities.`,
+      newState: { ...newState, firstActionDone: true },
+    };
+  }
+
+  // Profanity guard
+  if (PROFANITY_PATTERNS.some((p) => p.test(message))) {
+    return {
+      reply: "I'm here to help with your product demo. Let me know what you'd like to explore.",
+      newState: { ...newState, firstActionDone: true },
+    };
+  }
+
   const isList = /\b(show|list|get|find|display|what|give|see|view)\b/.test(lower);
   const isCreate = /\b(create|add|new|make|insert)\b/.test(lower);
   const isDelete = /\b(delete|remove|drop|clear|archive)\b/.test(lower);
@@ -24,7 +57,7 @@ export function processMessage(
   if (isHelp) {
     const entityNames = template.entities.map((e) => e.displayName.toLowerCase()).join(', ');
     return {
-      reply: `I can help you with ${template.productName}. I can list or search your ${entityNames}, create new records, update existing ones, or navigate the UI. Try: "Show all ${template.entities[0].displayName.toLowerCase()}" or "Create a new ${template.entities[0].displayName.slice(0, -1).toLowerCase()}".`,
+      reply: `I can help you with ${template.productName}. I can list or search your ${entityNames}, create new records, update existing ones, or navigate the UI. Try: "Show all ${template.entities[0].displayName.toLowerCase()}" or "Create a new ${template.entities[0].displayName.replace(/s$/, '').toLowerCase()}".`,
       newState: { ...newState, firstActionDone: true },
     };
   }

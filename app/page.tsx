@@ -4,6 +4,13 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { templates } from '@/lib/templates';
+import {
+  isValidUrl,
+  isPrivateIp,
+  normalizeUrl,
+  checkRateLimit,
+  recordSessionStart,
+} from '@/lib/validation';
 
 export default function Home() {
   const router = useRouter();
@@ -13,25 +20,38 @@ export default function Home() {
   const [spec, setSpec] = useState('');
   const [specError, setSpecError] = useState('');
 
+  const rate = checkRateLimit();
+
   const handleUrlSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setUrlError('');
-    const trimmed = url.trim();
-    if (!trimmed) return;
-    if (!trimmed.includes('.')) {
-      setUrlError('Please enter a valid URL');
+    if (!rate.allowed) {
+      const mins = Math.ceil((rate.resetAt - Date.now()) / 60000);
+      setUrlError(`Rate limit reached. Try again in ${mins} minute${mins === 1 ? '' : 's'}.`);
       return;
     }
-    let normalized = trimmed;
-    if (!/^https?:\/\//i.test(normalized)) {
-      normalized = `https://${normalized}`;
+    const trimmed = url.trim();
+    if (!isValidUrl(trimmed)) {
+      setUrlError('Please enter a valid URL like example.com or https://example.com');
+      return;
     }
+    const normalized = normalizeUrl(trimmed);
+    if (isPrivateIp(normalized)) {
+      setUrlError('Private and internal URLs are not allowed.');
+      return;
+    }
+    recordSessionStart();
     router.push(`/processing?url=${encodeURIComponent(normalized)}`);
   };
 
   const handleSpecSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setSpecError('');
+    if (!rate.allowed) {
+      const mins = Math.ceil((rate.resetAt - Date.now()) / 60000);
+      setSpecError(`Rate limit reached. Try again in ${mins} minute${mins === 1 ? '' : 's'}.`);
+      return;
+    }
     const trimmed = spec.trim();
     if (!trimmed) return;
     try {
@@ -45,6 +65,7 @@ export default function Home() {
       setSpecError('Spec too large. Please upload a smaller spec or use a template.');
       return;
     }
+    recordSessionStart();
     router.push(`/processing?spec=${encoded}`);
   };
 
@@ -94,7 +115,7 @@ export default function Home() {
               />
               <button
                 type="submit"
-                disabled={!url.trim()}
+                disabled={!url.trim() || !rate.allowed}
                 className="rounded-lg bg-gray-900 px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-40"
               >
                 Demo
@@ -123,7 +144,7 @@ export default function Home() {
                 </p>
                 <button
                   type="submit"
-                  disabled={!spec.trim()}
+                  disabled={!spec.trim() || !rate.allowed}
                   className="rounded-lg bg-gray-900 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-40"
                 >
                   Demo

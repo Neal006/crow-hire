@@ -7,15 +7,21 @@ interface Props {
   messages: Message[];
   onSend: (msg: string) => void;
   firstActionDone: boolean;
+  rateError?: string;
 }
 
-export default function ChatPanel({ template, messages, onSend, firstActionDone }: Props) {
+export default function ChatPanel({ template, messages, onSend, firstActionDone, rateError }: Props) {
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages]);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,7 +64,7 @@ export default function ChatPanel({ template, messages, onSend, firstActionDone 
         ))}
       </div>
 
-      {firstActionDone && (
+      {firstActionDone && !rateError && (
         <Link
           href="/contact"
           className="mx-4 mb-2 block rounded-md border border-green-200 bg-green-50 px-3 py-2 transition-colors hover:bg-green-100"
@@ -70,13 +76,20 @@ export default function ChatPanel({ template, messages, onSend, firstActionDone 
         </Link>
       )}
 
+      {rateError && (
+        <div className="mx-4 mb-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+          <p className="text-xs text-amber-800">{rateError}</p>
+        </div>
+      )}
+
       <div className="px-4 pb-2">
         <div className="flex flex-wrap gap-2">
           {template.suggestedPrompts.map((prompt) => (
             <button
               key={prompt}
               onClick={() => onSend(prompt)}
-              className="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-900"
+              disabled={!!rateError}
+              className="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-900 disabled:opacity-40"
             >
               {prompt}
             </button>
@@ -87,15 +100,17 @@ export default function ChatPanel({ template, messages, onSend, firstActionDone 
       <form onSubmit={handleSubmit} className="border-t border-gray-200 p-4">
         <div className="flex gap-2">
           <input
+            ref={inputRef}
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask the agent..."
-            className="flex-1 rounded-md border border-gray-200 px-3 py-2 text-sm outline-none focus:border-gray-400"
+            placeholder={rateError ? 'Limit reached' : 'Ask the agent...'}
+            disabled={!!rateError}
+            className="flex-1 rounded-md border border-gray-200 px-3 py-2 text-sm outline-none focus:border-gray-400 disabled:bg-gray-50"
           />
           <button
             type="submit"
-            disabled={!input.trim()}
+            disabled={!input.trim() || !!rateError}
             className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
           >
             Send

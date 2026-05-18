@@ -7,6 +7,8 @@ import { getTemplate, createInitialState } from '@/lib/templates';
 import { processMessage } from '@/lib/agent';
 import { SessionState, Message } from '@/lib/types';
 import { trackSession } from '@/lib/analytics';
+import { checkSessionExpired, getSessionState, setSessionState } from '@/lib/session';
+import { checkMessageLimit } from '@/lib/validation';
 import MockProduct from '@/components/MockProduct';
 import ChatPanel from '@/components/ChatPanel';
 
@@ -22,6 +24,8 @@ function DemoContent() {
   const urlSession = searchParams.get('session');
   const [sessionId] = useState(urlSession || `s-${Math.random().toString(36).slice(2, 9)}`);
   const [state, setState] = useState<SessionState | null>(null);
+  const [expired, setExpired] = useState<{ reason: 'inactivity' | 'hard' } | null>(null);
+  const [rateError, setRateError] = useState('');
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -32,19 +36,22 @@ function DemoContent() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const saved = localStorage.getItem(`crow-session-${sessionId}`);
+    const expiredCheck = checkSessionExpired(sessionId);
+    if (expiredCheck.expired) {
+      setExpired({ reason: expiredCheck.reason! });
+      return;
+    }
+    const saved = getSessionState(sessionId);
     if (saved) {
-      try {
-        setState(JSON.parse(saved));
-        return;
-      } catch {}
+      setState(saved as SessionState);
+      return;
     }
     setState(createInitialState(templateId));
   }, [sessionId, templateId]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !state) return;
-    localStorage.setItem(`crow-session-${sessionId}`, JSON.stringify(state));
+    setSessionState(sessionId, state);
 
     const template = getTemplate(state.templateId);
     const saved = localStorage.getItem(`crow-template-${state.templateId}`);
@@ -74,6 +81,13 @@ function DemoContent() {
   }, [state, sessionId]);
 
   const handleSend = useCallback((content: string) => {
+    setRateError('');
+    const limit = checkMessageLimit(sessionId);
+    if (!limit.allowed) {
+      setRateError('Session message limit reached (50). Start a new demo to continue.');
+      return;
+    }
+
     const userMsg: Message = {
       id: `u-${Date.now()}`,
       role: 'user',
@@ -99,11 +113,32 @@ function DemoContent() {
         };
       });
     }, 600);
-  }, []);
+  }, [sessionId]);
 
   const handleNavChange = useCallback((id: string) => {
     setState((prev) => (prev ? { ...prev, activeNav: id } : prev));
   }, []);
+
+  if (expired) {
+    return (
+      <div className="flex h-screen w-full flex-col items-center justify-center bg-white px-6">
+        <div className="max-w-md text-center">
+          <h1 className="text-2xl font-semibold text-gray-900">Session expired</h1>
+          <p className="mt-2 text-sm text-gray-600">
+            {expired.reason === 'inactivity'
+              ? 'This session expired after 30 minutes of inactivity.'
+              : 'This session link expired after 7 days.'}
+          </p>
+          <a
+            href="/"
+            className="mt-6 inline-block rounded-lg bg-gray-900 px-5 py-2 text-sm font-medium text-white hover:bg-gray-800"
+          >
+            Start a new demo
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   if (!state) return null;
 
@@ -137,6 +172,7 @@ function DemoContent() {
           messages={state.messages}
           onSend={handleSend}
           firstActionDone={state.firstActionDone}
+          rateError={rateError}
         />
       </div>
     </div>

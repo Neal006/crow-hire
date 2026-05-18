@@ -79,7 +79,7 @@ function ProcessingContent() {
           const decoded = decodeURIComponent(spec);
           const generated = generateTemplateFromSpec(decoded);
           if (!generated) {
-            setError('Could not parse OpenAPI spec. Please check the JSON and try again.');
+            setError('No endpoints found in this OpenAPI spec. Please check the JSON and try again, or pick a template.');
             return;
           }
           localStorage.setItem(`crow-template-${generated.id}`, JSON.stringify(generated));
