@@ -54,6 +54,10 @@ export default function Home() {
     }
     const trimmed = spec.trim();
     if (!trimmed) return;
+    if (trimmed.length > 1000000) {
+      setSpecError('Spec too large (max 1MB). Please upload a smaller spec or use a template.');
+      return;
+    }
     try {
       JSON.parse(trimmed);
     } catch {
@@ -62,7 +66,7 @@ export default function Home() {
     }
     const encoded = encodeURIComponent(trimmed);
     if (encoded.length > 50000) {
-      setSpecError('Spec too large. Please upload a smaller spec or use a template.');
+      setSpecError('Spec too large for URL. Please upload a smaller spec or use a template.');
       return;
     }
     recordSessionStart();

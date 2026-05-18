@@ -22,7 +22,11 @@ export function trackSession(meta: SessionMeta) {
   } else {
     index.push(meta);
   }
-  localStorage.setItem(INDEX_KEY, JSON.stringify(index));
+  // Keep only the 100 most recent sessions to prevent unbounded growth
+  const trimmed = index
+    .sort((a, b) => b.lastActivity - a.lastActivity)
+    .slice(0, 100);
+  localStorage.setItem(INDEX_KEY, JSON.stringify(trimmed));
 }
 
 export function getSessionIndex(): SessionMeta[] {
