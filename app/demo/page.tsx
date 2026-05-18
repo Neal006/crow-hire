@@ -74,7 +74,15 @@ function DemoContent() {
 
   if (!state) return null;
 
-  const template = getTemplate(state.templateId);
+  let template = getTemplate(state.templateId);
+  if (!template && typeof window !== 'undefined') {
+    const saved = localStorage.getItem(`crow-template-${state.templateId}`);
+    if (saved) {
+      try {
+        template = JSON.parse(saved);
+      } catch {}
+    }
+  }
   if (!template)
     return (
       <div className="p-8 text-sm text-gray-500">Invalid demo</div>

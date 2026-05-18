@@ -1,7 +1,31 @@
+'use client';
+
+import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { templates } from '@/lib/templates';
 
 export default function Home() {
+  const router = useRouter();
+  const [url, setUrl] = useState('');
+  const [error, setError] = useState('');
+
+  const handleUrlSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    if (!trimmed.includes('.')) {
+      setError('Please enter a valid URL');
+      return;
+    }
+    let normalized = trimmed;
+    if (!/^https?:\/\//i.test(normalized)) {
+      normalized = `https://${normalized}`;
+    }
+    router.push(`/processing?url=${encodeURIComponent(normalized)}`);
+  };
+
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white px-6">
       <div className="mx-auto max-w-2xl text-center">
@@ -10,6 +34,31 @@ export default function Home() {
         </h1>
         <p className="mt-4 text-lg text-gray-600">
           No code, no signup. Try a pre-built demo in 60 seconds.
+        </p>
+      </div>
+
+      <div className="mt-10 w-full max-w-xl">
+        <form onSubmit={handleUrlSubmit} className="flex gap-2">
+          <input
+            type="text"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="Paste your product URL..."
+            className="flex-1 rounded-lg border border-gray-200 px-4 py-3 text-sm outline-none transition-colors focus:border-gray-400"
+          />
+          <button
+            type="submit"
+            disabled={!url.trim()}
+            className="rounded-lg bg-gray-900 px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-40"
+          >
+            Demo
+          </button>
+        </form>
+        {error && (
+          <p className="mt-2 text-sm text-red-600">{error}</p>
+        )}
+        <p className="mt-2 text-xs text-gray-400">
+          We crawl public pages only. No login required.
         </p>
       </div>
 

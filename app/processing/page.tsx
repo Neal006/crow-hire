@@ -4,10 +4,21 @@ import { Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { getTemplate } from '@/lib/templates';
+import { generateTemplateFromUrl } from '@/lib/crawl';
+import { Template } from '@/lib/types';
 
-const steps = [
+const templateSteps = [
   { label: 'Crawling your product...', duration: 3000 },
   { label: 'Understanding your features...', duration: 2000 },
+  { label: 'Generating agent tools...', duration: 2000 },
+  { label: 'Spinning up sandbox...', duration: 1500 },
+  { label: 'Your agent is ready', duration: 500 },
+];
+
+const urlSteps = [
+  { label: 'Crawling your product...', duration: 4000 },
+  { label: 'Analyzing pages found...', duration: 2500 },
+  { label: 'Extracting features and entities...', duration: 2000 },
   { label: 'Generating agent tools...', duration: 2000 },
   { label: 'Spinning up sandbox...', duration: 1500 },
   { label: 'Your agent is ready', duration: 500 },
@@ -16,14 +27,39 @@ const steps = [
 function ProcessingContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const templateId = searchParams.get('template') || 'crm';
+  const templateId = searchParams.get('template');
+  const url = searchParams.get('url');
+  const steps = url ? urlSteps : templateSteps;
   const [stepIndex, setStepIndex] = useState(0);
-  const template = getTemplate(templateId);
+  const [productName, setProductName] = useState<string>('');
+
+  useEffect(() => {
+    if (templateId) {
+      const template = getTemplate(templateId);
+      if (template) setProductName(template.productName);
+    } else if (url) {
+      try {
+        const hostname = new URL(url).hostname.replace(/^www\./, '');
+        const name = hostname.split('.')[0];
+        setProductName(name.charAt(0).toUpperCase() + name.slice(1));
+      } catch {
+        setProductName('Your Product');
+      }
+    }
+  }, [templateId, url]);
 
   useEffect(() => {
     if (stepIndex >= steps.length - 1) {
       const timer = setTimeout(() => {
-        router.push(`/demo?template=${templateId}`);
+        if (url) {
+          const generated = generateTemplateFromUrl(url);
+          localStorage.setItem(`crow-template-${generated.id}`, JSON.stringify(generated));
+          router.push(`/demo?template=${generated.id}`);
+        } else if (templateId) {
+          router.push(`/demo?template=${templateId}`);
+        } else {
+          router.push('/');
+        }
       }, steps[steps.length - 1].duration);
       return () => clearTimeout(timer);
     }
@@ -31,15 +67,17 @@ function ProcessingContent() {
       setStepIndex((i) => i + 1);
     }, steps[stepIndex].duration);
     return () => clearTimeout(timer);
-  }, [stepIndex, templateId, router]);
+  }, [stepIndex, templateId, url, router, steps]);
 
-  if (!template) return <div className="p-8 text-sm text-gray-500">Invalid template</div>;
+  if (!templateId && !url) {
+    return <div className="p-8 text-sm text-gray-500">Invalid input</div>;
+  }
 
   return (
     <div className="flex h-screen w-full flex-col items-center justify-center bg-white">
       <div className="w-full max-w-md space-y-6 px-6">
         <h1 className="text-2xl font-semibold tracking-tight text-gray-900">
-          {template.productName}
+          {productName || 'Loading...'}
         </h1>
         <div className="space-y-4">
           {steps.map((step, i) => {
