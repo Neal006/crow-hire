@@ -12,7 +12,6 @@ interface Props {
 }
 
 function formatContent(content: string): React.ReactNode {
-  // Check if it looks like JSON
   const trimmed = content.trim();
   if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
     try {
@@ -31,6 +30,8 @@ function formatContent(content: string): React.ReactNode {
 
 export default function ChatPanel({ template, messages, onSend, firstActionDone, sandboxCtaShown, rateError }: Props) {
   const [input, setInput] = useState('');
+  const [dismissedFirstCta, setDismissedFirstCta] = useState(false);
+  const [dismissedSandboxCta, setDismissedSandboxCta] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -83,27 +84,43 @@ export default function ChatPanel({ template, messages, onSend, firstActionDone,
         ))}
       </div>
 
-      {firstActionDone && !rateError && !sandboxCtaShown && (
-        <Link
-          href="/contact"
-          className="mx-4 mb-2 block rounded-md border border-green-200 bg-green-50 px-3 py-2 transition-colors hover:bg-green-100"
-        >
-          <p className="text-xs text-green-800">
-            This is running on real Crow infrastructure. Add it to your product
-            in under a week →
-          </p>
-        </Link>
+      {firstActionDone && !rateError && !sandboxCtaShown && !dismissedFirstCta && (
+        <div className="mx-4 mb-2 rounded-md border border-green-200 bg-green-50 px-3 py-2">
+          <div className="flex items-start justify-between gap-2">
+            <Link href="/contact" className="block flex-1">
+              <p className="text-xs text-green-800">
+                This is running on real Crow infrastructure. Add it to your product
+                in under a week →
+              </p>
+            </Link>
+            <button
+              onClick={() => setDismissedFirstCta(true)}
+              className="text-xs text-green-600 hover:text-green-800"
+              aria-label="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+        </div>
       )}
 
-      {sandboxCtaShown && !rateError && (
-        <Link
-          href="/contact"
-          className="mx-4 mb-2 block rounded-md border border-blue-200 bg-blue-50 px-3 py-2 transition-colors hover:bg-blue-100"
-        >
-          <p className="text-xs text-blue-800">
-            This is a sandbox — in a full Crow integration, this would execute against your real API. See how →
-          </p>
-        </Link>
+      {sandboxCtaShown && !rateError && !dismissedSandboxCta && (
+        <div className="mx-4 mb-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2">
+          <div className="flex items-start justify-between gap-2">
+            <Link href="/contact" className="block flex-1">
+              <p className="text-xs text-blue-800">
+                This is a sandbox — in a full Crow integration, this would execute against your real API. See how →
+              </p>
+            </Link>
+            <button
+              onClick={() => setDismissedSandboxCta(true)}
+              className="text-xs text-blue-600 hover:text-blue-800"
+              aria-label="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+        </div>
       )}
 
       {rateError && (
