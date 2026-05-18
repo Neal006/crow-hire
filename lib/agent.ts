@@ -65,7 +65,12 @@ export function processMessage(
   if (isSandbox) {
     return {
       reply: `This is a sandbox — I'm working with mock data only. In a full Crow integration, I'd execute against your real API with your actual permissions. Want to see how that works?`,
-      newState: { ...newState, firstActionDone: true },
+      action: {
+        type: 'navigate',
+        description: 'Sandbox limitation explained',
+        payload: {},
+      },
+      newState: { ...newState, firstActionDone: true, sandboxCtaShown: true },
     };
   }
 
@@ -251,9 +256,11 @@ export function processMessage(
     };
   }
 
+  // Fallback — count as a miss
+  const fallbackReply = `I'm not sure how to help with that in ${template.productName}. Try asking me to show your ${template.entities[0].displayName.toLowerCase()}, create a new ${template.entities[0].displayName.replace(/s$/, '').toLowerCase()}, or ask "what can you do?"`;
   return {
-    reply: `I'm not sure how to help with that in ${template.productName}. Try asking me to show your ${template.entities[0].displayName.toLowerCase()}, create a new ${template.entities[0].displayName.replace(/s$/, '').toLowerCase()}, or ask "what can you do?"`,
-    newState,
+    reply: fallbackReply,
+    newState: { ...newState, agentMisses: newState.agentMisses + 1 },
   };
 }
 

@@ -7,10 +7,29 @@ interface Props {
   messages: Message[];
   onSend: (msg: string) => void;
   firstActionDone: boolean;
+  sandboxCtaShown: boolean;
   rateError?: string;
 }
 
-export default function ChatPanel({ template, messages, onSend, firstActionDone, rateError }: Props) {
+function formatContent(content: string): React.ReactNode {
+  // Check if it looks like JSON
+  const trimmed = content.trim();
+  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      return (
+        <pre className="mt-2 overflow-x-auto rounded bg-gray-900 p-2 text-xs text-green-300">
+          {JSON.stringify(parsed, null, 2)}
+        </pre>
+      );
+    } catch {
+      // Not valid JSON, render as text
+    }
+  }
+  return content;
+}
+
+export default function ChatPanel({ template, messages, onSend, firstActionDone, sandboxCtaShown, rateError }: Props) {
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -52,7 +71,7 @@ export default function ChatPanel({ template, messages, onSend, firstActionDone,
                   : 'bg-gray-100 text-gray-900'
               }`}
             >
-              {msg.content}
+              {typeof formatContent(msg.content) === 'string' ? msg.content : formatContent(msg.content)}
               {msg.action && (
                 <div className="mt-1.5 flex items-center gap-1.5 text-xs opacity-70">
                   <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
@@ -64,7 +83,7 @@ export default function ChatPanel({ template, messages, onSend, firstActionDone,
         ))}
       </div>
 
-      {firstActionDone && !rateError && (
+      {firstActionDone && !rateError && !sandboxCtaShown && (
         <Link
           href="/contact"
           className="mx-4 mb-2 block rounded-md border border-green-200 bg-green-50 px-3 py-2 transition-colors hover:bg-green-100"
@@ -72,6 +91,17 @@ export default function ChatPanel({ template, messages, onSend, firstActionDone,
           <p className="text-xs text-green-800">
             This is running on real Crow infrastructure. Add it to your product
             in under a week →
+          </p>
+        </Link>
+      )}
+
+      {sandboxCtaShown && !rateError && (
+        <Link
+          href="/contact"
+          className="mx-4 mb-2 block rounded-md border border-blue-200 bg-blue-50 px-3 py-2 transition-colors hover:bg-blue-100"
+        >
+          <p className="text-xs text-blue-800">
+            This is a sandbox — in a full Crow integration, this would execute against your real API. See how →
           </p>
         </Link>
       )}

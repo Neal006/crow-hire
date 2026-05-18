@@ -228,6 +228,8 @@ export function createInitialState(templateId: string): SessionState {
     activeNav: template.navItems[0].id,
     entityData,
     firstActionDone: false,
+    sandboxCtaShown: false,
+    agentMisses: 0,
     messages: [
       {
         id: 'welcome',

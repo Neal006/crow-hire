@@ -30,6 +30,8 @@ export interface SessionState {
   activeNav: string;
   entityData: Record<string, Record<string, string | number>[]>;
   firstActionDone: boolean;
+  sandboxCtaShown: boolean;
+  agentMisses: number;
   messages: Message[];
 }
 

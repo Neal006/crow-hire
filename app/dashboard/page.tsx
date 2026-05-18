@@ -100,13 +100,14 @@ export default function DashboardPage() {
                     <th className="px-4 py-3 font-medium text-gray-500">Product</th>
                     <th className="px-4 py-3 font-medium text-gray-500">Messages</th>
                     <th className="px-4 py-3 font-medium text-gray-500">First Action</th>
+                    <th className="px-4 py-3 font-medium text-gray-500">Agent Quality</th>
                     <th className="px-4 py-3 font-medium text-gray-500">Last Active</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {sessions.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                      <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
                         No sessions yet. Generate a demo to see data here.
                       </td>
                     </tr>
@@ -126,6 +127,13 @@ export default function DashboardPage() {
                           <span className="text-green-600">Yes</span>
                         ) : (
                           <span className="text-gray-400">No</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {s.hasErrors ? (
+                          <span className="text-amber-600">Misses</span>
+                        ) : (
+                          <span className="text-gray-400">—</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-gray-500">

@@ -7,6 +7,7 @@ export interface SessionMeta {
   lastActivity: number;
   messageCount: number;
   firstActionDone: boolean;
+  hasErrors: boolean;
   userQueries: string[];
 }
 

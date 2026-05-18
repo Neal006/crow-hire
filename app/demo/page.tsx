@@ -76,6 +76,7 @@ function DemoContent() {
       lastActivity: Date.now(),
       messageCount: state.messages.length,
       firstActionDone: state.firstActionDone,
+      hasErrors: state.agentMisses > 0,
       userQueries,
     });
   }, [state, sessionId]);
@@ -172,6 +173,7 @@ function DemoContent() {
           messages={state.messages}
           onSend={handleSend}
           firstActionDone={state.firstActionDone}
+          sandboxCtaShown={state.sandboxCtaShown}
           rateError={rateError}
         />
       </div>
