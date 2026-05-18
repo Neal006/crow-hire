@@ -28,6 +28,12 @@ function DemoContent() {
   const [rateError, setRateError] = useState('');
   const [showSummary, setShowSummary] = useState(false);
   const inactivityTimer = useRef<NodeJS.Timeout | null>(null);
+  const stateRef = useRef<SessionState | null>(null);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   const resetInactivity = useCallback(() => {
     if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
@@ -97,7 +103,7 @@ function DemoContent() {
     });
   }, [state, sessionId]);
 
-  const handleSend = useCallback((content: string) => {
+  const handleSend = useCallback(async (content: string) => {
     setRateError('');
     setShowSummary(false);
     resetInactivity();
@@ -115,23 +121,34 @@ function DemoContent() {
     };
     setState((prev) => (prev ? { ...prev, messages: [...prev.messages, userMsg] } : prev));
 
-    setTimeout(() => {
-      setState((prev) => {
-        if (!prev) return prev;
-        const result = processMessage(content, prev);
-        const agentMsg: Message = {
-          id: `a-${Date.now()}`,
-          role: 'agent',
-          content: result.reply,
-          timestamp: Date.now(),
-          action: result.action,
-        };
-        return {
-          ...result.newState,
-          messages: [...result.newState.messages, agentMsg],
-        };
+    // Small delay so state update is committed
+    await new Promise((r) => setTimeout(r, 50));
+
+    const currentState = stateRef.current;
+    if (!currentState) return;
+
+    try {
+      const result = await processMessage(content, currentState);
+      const agentMsg: Message = {
+        id: `a-${Date.now()}`,
+        role: 'agent',
+        content: result.reply,
+        timestamp: Date.now(),
+        action: result.action,
+      };
+      setState({
+        ...result.newState,
+        messages: [...result.newState.messages, agentMsg],
       });
-    }, 600);
+    } catch {
+      const agentMsg: Message = {
+        id: `a-${Date.now()}`,
+        role: 'agent',
+        content: 'Something went wrong. Try again in a moment.',
+        timestamp: Date.now(),
+      };
+      setState((prev) => (prev ? { ...prev, messages: [...prev.messages, agentMsg] } : prev));
+    }
   }, [sessionId, resetInactivity]);
 
   const handleNavChange = useCallback((id: string) => {

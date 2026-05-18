@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import { getTemplate } from '@/lib/templates';
 import { generateTemplateFromUrl } from '@/lib/crawl';
 import { generateTemplateFromSpec } from '@/lib/openapi';
+import { Template } from '@/lib/types';
 
 const templateSteps = [
   { label: 'Crawling your product...', duration: 3000 },
@@ -33,6 +34,57 @@ const specSteps = [
   { label: 'Your agent is ready', duration: 500 },
 ];
 
+function generateTemplateFromCrawl(url: string, crawlResult: { title: string; description: string; headings: string[]; entities: { name: string }[] }): Template {
+  const hostname = new URL(url).hostname.replace(/^www\./, '');
+  const domain = hostname.split('.')[0];
+  const productName = crawlResult.title || domain.charAt(0).toUpperCase() + domain.slice(1);
+
+  const colors = ['#4f46e5', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2'];
+  const color = colors[domain.length % colors.length];
+
+  const entityNames = crawlResult.entities.length > 0
+    ? crawlResult.entities.map((e) => e.name.toLowerCase().replace(/\s+/g, ''))
+    : ['items', 'users', 'tasks', 'projects'];
+
+  const entities = entityNames.map((name) => ({
+    name,
+    displayName: name.charAt(0).toUpperCase() + name.slice(1),
+    fields: [
+      { key: 'id', label: 'ID' },
+      { key: 'name', label: 'Name' },
+      { key: 'status', label: 'Status' },
+    ],
+    data: [
+      { id: '1', name: 'Alpha', status: 'Active' },
+      { id: '2', name: 'Beta', status: 'Pending' },
+      { id: '3', name: 'Gamma', status: 'Active' },
+    ] as Record<string, string | number>[],
+  }));
+
+  const navItems = [
+    { label: 'Dashboard', id: 'dashboard' },
+    ...entities.map((e) => ({ label: e.displayName, id: e.name })),
+    { label: 'Settings', id: 'settings' },
+  ];
+
+  const suggestedPrompts = [
+    `Show all ${entities[0]?.displayName.toLowerCase() || 'items'}`,
+    `Create a new ${entities[0]?.displayName.slice(0, -1).toLowerCase() || 'item'}`,
+    `List ${entities[1]?.displayName.toLowerCase() || 'records'}`,
+    'What can this product do?',
+  ];
+
+  return {
+    id: `url-${Date.now()}`,
+    name: productName,
+    productName,
+    color,
+    navItems,
+    entities,
+    suggestedPrompts,
+  };
+}
+
 function ProcessingContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -44,6 +96,7 @@ function ProcessingContent() {
   const [stepIndex, setStepIndex] = useState(0);
   const [productName, setProductName] = useState<string>('');
   const [error, setError] = useState('');
+  const [crawlResult, setCrawlResult] = useState<{ title: string; description: string; headings: string[]; entities: { name: string }[] } | null>(null);
 
   useEffect(() => {
     if (templateId) {
@@ -68,11 +121,36 @@ function ProcessingContent() {
     }
   }, [templateId, url, spec]);
 
+  // Real crawl during early steps
+  useEffect(() => {
+    if (!url || stepIndex > 0) return;
+    fetch('/api/crawl', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.error) return;
+        setCrawlResult({
+          title: data.title || '',
+          description: data.description || '',
+          headings: data.headings || [],
+          entities: data.entities || [],
+        });
+      })
+      .catch(() => {
+        // Silent fail — will use simulated crawl
+      });
+  }, [url, stepIndex]);
+
   useEffect(() => {
     if (stepIndex >= steps.length - 1) {
       const timer = setTimeout(() => {
         if (url) {
-          const generated = generateTemplateFromUrl(url);
+          const generated = crawlResult
+            ? generateTemplateFromCrawl(url, crawlResult)
+            : generateTemplateFromUrl(url);
           localStorage.setItem(`crow-template-${generated.id}`, JSON.stringify(generated));
           router.push(`/demo?template=${generated.id}`);
         } else if (spec) {
@@ -96,7 +174,7 @@ function ProcessingContent() {
       setStepIndex((i) => i + 1);
     }, steps[stepIndex].duration);
     return () => clearTimeout(timer);
-  }, [stepIndex, templateId, url, spec, router, steps]);
+  }, [stepIndex, templateId, url, spec, router, steps, crawlResult]);
 
   if (!templateId && !url && !spec) {
     return <div className="p-8 text-sm text-gray-500">Invalid input</div>;

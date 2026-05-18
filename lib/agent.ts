@@ -1,292 +1,284 @@
-import { SessionState, Action } from './types';
-import { getTemplate } from './templates';
+import { SessionState } from './types';
+import { processMessageRegex } from './agent-regex';
 
-const JAILBREAK_PATTERNS = [
-  /ignore previous instructions/i,
-  /ignore all (prior|previous) (instructions|rules)/i,
-  /you are now .* mode/i,
-  /pretend you are/i,
-  /simulate being/i,
-  /act as (if|though) you are/i,
-  /disregard (all|any) (safety|constraints|rules)/i,
-  /system prompt/i,
-  /developer mode/i,
-  /DAN mode/i,
-];
+interface ChatApiRequest {
+  messages: { role: 'user' | 'assistant' | 'system'; content: string }[];
+  context: string;
+  tools: { name: string; description: string; parameters: Record<string, unknown> }[];
+}
 
-const PROFANITY_PATTERNS = [
-  /\b(f+u+c+k+|s+h+i+t+|a+s+s+h+o+l+e+|b+i+t+c+h+|d+i+c+k+)\b/i,
-];
+interface ChatApiResponse {
+  content: string;
+  action?: {
+    tool: string;
+    params: Record<string, unknown>;
+  };
+  error?: string;
+}
 
-export function processMessage(
+function buildTools(state: SessionState) {
+  const entities = Object.keys(state.entityData);
+  const tools: ChatApiRequest['tools'] = [];
+
+  for (const entityName of entities) {
+    tools.push({
+      name: `list_${entityName}`,
+      description: `List all ${entityName} records`,
+      parameters: {
+        type: 'object',
+        properties: {
+          filter: { type: 'string', description: 'Optional status or type filter' },
+        },
+      },
+    });
+    tools.push({
+      name: `create_${entityName}`,
+      description: `Create a new ${entityName} record`,
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Name of the new record' },
+        },
+        required: ['name'],
+      },
+    });
+    tools.push({
+      name: `delete_${entityName}`,
+      description: `Delete a ${entityName} record by name`,
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Name of the record to delete' },
+        },
+        required: ['name'],
+      },
+    });
+    tools.push({
+      name: `update_${entityName}`,
+      description: `Update a ${entityName} record`,
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Name of the record to update' },
+          status: { type: 'string', description: 'New status value' },
+        },
+        required: ['name'],
+      },
+    });
+  }
+
+  tools.push({
+    name: 'navigate',
+    description: 'Navigate to a different section of the product UI',
+    parameters: {
+      type: 'object',
+      properties: {
+        section: { type: 'string', description: 'Section name like Dashboard, Settings, etc.' },
+      },
+      required: ['section'],
+    },
+  });
+
+  return tools;
+}
+
+async function callChatApi(body: ChatApiRequest): Promise<ChatApiResponse> {
+  const res = await fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    return { content: '', error: data.error || `API error ${res.status}` };
+  }
+  return res.json();
+}
+
+function buildMessages(state: SessionState, latestUserMessage: string) {
+  const msgs: ChatApiRequest['messages'] = [];
+  for (const m of state.messages) {
+    if (m.role === 'agent') {
+      msgs.push({ role: 'assistant', content: m.content });
+    } else {
+      msgs.push({ role: 'user', content: m.content });
+    }
+  }
+  msgs.push({ role: 'user', content: latestUserMessage });
+  return msgs;
+}
+
+export async function processMessage(
   message: string,
   state: SessionState
-): { reply: string; action?: Action; newState: SessionState } {
-  const template = getTemplate(state.templateId);
-  if (!template) {
-    return { reply: "I don't recognize this demo environment.", newState: state };
-  }
+): Promise<{ reply: string; action?: import('./types').Action; newState: SessionState }> {
+  // Try the LLM API first
+  try {
+    const apiResult = await callChatApi({
+      messages: buildMessages(state, message),
+      context: 'Crow Sandbox Demo',
+      tools: buildTools(state),
+    });
 
-  const lower = message.toLowerCase();
-  let newState = { ...state, messages: [...state.messages] };
-  let action: Action | undefined;
+    if (apiResult.error) {
+      // Fall back to regex
+      return processMessageRegex(message, state);
+    }
 
-  // Prompt injection guard
-  if (JAILBREAK_PATTERNS.some((p) => p.test(message))) {
+    if (apiResult.action) {
+      // Execute the action locally
+      return executeToolCall(apiResult.action.tool, apiResult.action.params, state, message);
+    }
+
     return {
-      reply: `I can only help with ${template.productName} tasks in this sandbox. Let me know if you'd like to see a demo of Crow's capabilities.`,
-      newState: { ...newState, firstActionDone: true },
+      reply: apiResult.content,
+      newState: { ...state, firstActionDone: true },
     };
+  } catch {
+    // Network or other error — fall back to regex
+    return processMessageRegex(message, state);
   }
+}
 
-  // Profanity guard
-  if (PROFANITY_PATTERNS.some((p) => p.test(message))) {
+function executeToolCall(
+  toolName: string,
+  params: Record<string, unknown>,
+  state: SessionState,
+  originalMessage: string
+): { reply: string; action?: import('./types').Action; newState: SessionState } {
+  const newState = { ...state, messages: [...state.messages] };
+
+  if (toolName.startsWith('list_')) {
+    const entityName = toolName.replace('list_', '');
+    const data = newState.entityData[entityName] || [];
+    const filter = (params.filter as string)?.toLowerCase();
+    const filtered = filter
+      ? data.filter((row) =>
+          Object.values(row).some((v) => String(v).toLowerCase().includes(filter))
+        )
+      : data;
+
     return {
-      reply: "I'm here to help with your product demo. Let me know what you'd like to explore.",
-      newState: { ...newState, firstActionDone: true },
-    };
-  }
-
-  const isList = /\b(show|list|get|find|display|what|give|see|view)\b/.test(lower);
-  const isCreate = /\b(create|add|new|make|insert)\b/.test(lower);
-  const isDelete = /\b(delete|remove|drop|clear|archive)\b/.test(lower);
-  const isUpdate = /\b(update|change|edit|modify|set|rename)\b/.test(lower);
-  const isHelp = /\b(help|what can you do|what do you do|capabilities|commands)\b/.test(lower);
-  const isSandbox = /\b(production|real data|live|write to|actual api|external)\b/.test(lower);
-
-  if (isHelp) {
-    const entityNames = template.entities.map((e) => e.displayName.toLowerCase()).join(', ');
-    return {
-      reply: `I can help you with ${template.productName}. I can list or search your ${entityNames}, create new records, update existing ones, or navigate the UI. Try: "Show all ${template.entities[0].displayName.toLowerCase()}" or "Create a new ${template.entities[0].displayName.replace(/s$/, '').toLowerCase()}".`,
-      newState: { ...newState, firstActionDone: true },
-    };
-  }
-
-  if (isSandbox) {
-    return {
-      reply: `This is a sandbox — I'm working with mock data only. In a full Crow integration, I'd execute against your real API with your actual permissions. Want to see how that works?`,
+      reply: filter
+        ? `Found ${filtered.length} matching ${entityName}.`
+        : `Here are your ${filtered.length} ${entityName}.`,
       action: {
         type: 'navigate',
-        description: 'Sandbox limitation explained',
-        payload: {},
+        description: `Listed ${filtered.length} ${entityName}`,
+        payload: { entity: entityName, data: filtered },
       },
-      newState: { ...newState, firstActionDone: true, sandboxCtaShown: true },
+      newState: {
+        ...newState,
+        activeNav: entityName,
+        firstActionDone: true,
+      },
     };
   }
 
-  let targetEntity: string | undefined;
-  let targetNavId: string | undefined;
-
-  for (const entity of template.entities) {
-    const singular = entity.name.replace(/s$/, '');
-    const plural = entity.name;
-    if (lower.includes(plural) || lower.includes(singular)) {
-      targetEntity = entity.name;
-      targetNavId = entity.name;
-      break;
-    }
-  }
-
-  if (!targetEntity) {
-    for (const nav of template.navItems) {
-      if (lower.includes(nav.label.toLowerCase())) {
-        targetNavId = nav.id;
-        targetEntity = template.entities.find((e) => e.name === nav.id)?.name;
-        break;
-      }
-    }
-  }
-
-  if (targetEntity) {
-    const entityDef = template.entities.find((e) => e.name === targetEntity)!;
-    const currentData = [...(newState.entityData[targetEntity] || entityDef.data)];
-
-    if (isList) {
-      newState = {
-        ...newState,
-        activeNav: targetNavId || targetEntity,
-        entityData: { ...newState.entityData, [targetEntity]: currentData },
-      };
-
-      const statusFilter = extractStatusFilter(lower);
-      let filteredData = currentData;
-      if (statusFilter) {
-        filteredData = currentData.filter((row) => {
-          const val = String(row.status || row.type || row.role || '').toLowerCase();
-          return val.includes(statusFilter.toLowerCase());
-        });
-      }
-
-      action = {
-        type: 'navigate',
-        description: filteredData.length < currentData.length
-          ? `Filtered ${filteredData.length} of ${currentData.length} ${entityDef.displayName.toLowerCase()}`
-          : `Listed ${currentData.length} ${entityDef.displayName.toLowerCase()}`,
-        payload: { navId: targetNavId || targetEntity, entity: targetEntity, data: filteredData },
-      };
-
-      const count = filteredData.length;
-      const total = currentData.length;
-      const reply = filteredData.length < currentData.length
-        ? `Found ${count} matching ${entityDef.displayName.toLowerCase()} out of ${total}.`
-        : `Here are your ${count} ${entityDef.displayName.toLowerCase()}.`;
-
-      return {
-        reply,
-        action,
-        newState: { ...newState, firstActionDone: true },
-      };
-    }
-
-    if (isCreate) {
-      const rawName = extractName(message) || `New ${entityDef.displayName.replace(/s$/, '')}`;
-      const newItem: Record<string, string | number> = {};
-      entityDef.fields.forEach((f) => {
-        if (f.key === 'id') newItem[f.key] = `${Date.now()}`;
-        else if (f.key === 'name') newItem[f.key] = rawName;
-        else if (f.key === 'status') newItem[f.key] = 'New';
-        else if (f.key === 'email')
-          newItem[f.key] = `${rawName.toLowerCase().replace(/\s+/g, '.')}@example.com`;
-        else if (f.key === 'stage') newItem[f.key] = 'Discovery';
-        else if (f.key === 'type') newItem[f.key] = 'Standard';
-        else if (f.key === 'role') newItem[f.key] = 'Member';
-        else if (typeof currentData[0]?.[f.key] === 'number') newItem[f.key] = 0;
-        else newItem[f.key] = '—';
-      });
-      currentData.unshift(newItem);
-      newState = {
-        ...newState,
-        entityData: { ...newState.entityData, [targetEntity]: currentData },
-        activeNav: targetNavId || targetEntity,
-      };
-      action = {
+  if (toolName.startsWith('create_')) {
+    const entityName = toolName.replace('create_', '');
+    const name = (params.name as string) || 'New Item';
+    const data = [...(newState.entityData[entityName] || [])];
+    const newItem: Record<string, string | number> = { id: `${Date.now()}`, name };
+    data.unshift(newItem);
+    return {
+      reply: `I created a new ${entityName.slice(0, -1)}: ${name}.`,
+      action: {
         type: 'api_call',
-        description: `Created ${entityDef.displayName.replace(/s$/, '').toLowerCase()}: ${rawName}`,
-        payload: { entity: targetEntity, data: currentData, newItem },
-      };
-      return {
-        reply: `I created a new ${entityDef.displayName
-          .replace(/s$/, '')
-          .toLowerCase()} for ${rawName}. It's now at the top of the list.`,
-        action,
-        newState: { ...newState, firstActionDone: true },
-      };
-    }
-
-    if (isDelete) {
-      const nameToDelete = extractName(message);
-      if (nameToDelete) {
-        const idx = currentData.findIndex((row) =>
-          String(row.name || '').toLowerCase().includes(nameToDelete.toLowerCase())
-        );
-        if (idx >= 0) {
-          const removed = currentData.splice(idx, 1)[0];
-          newState = {
-            ...newState,
-            entityData: { ...newState.entityData, [targetEntity]: currentData },
-            activeNav: targetNavId || targetEntity,
-          };
-          action = {
-            type: 'api_call',
-            description: `Deleted ${entityDef.displayName.replace(/s$/, '').toLowerCase()}: ${removed.name}`,
-            payload: { entity: targetEntity, data: currentData },
-          };
-          return {
-            reply: `I deleted ${removed.name} from ${entityDef.displayName.toLowerCase()}.`,
-            action,
-            newState: { ...newState, firstActionDone: true },
-          };
-        }
-      }
-      return {
-        reply: `Which ${entityDef.displayName.replace(/s$/, '').toLowerCase()} would you like to delete? Give me a name.`,
-        newState: { ...newState, firstActionDone: true },
-      };
-    }
-
-    if (isUpdate) {
-      const nameToUpdate = extractName(message);
-      if (nameToUpdate) {
-        const idx = currentData.findIndex((row) =>
-          String(row.name || '').toLowerCase().includes(nameToUpdate.toLowerCase())
-        );
-        if (idx >= 0) {
-          const updated = { ...currentData[idx] };
-          const statusChange = extractStatusChange(message);
-          if (statusChange) {
-            updated.status = statusChange;
-          } else {
-            updated.name = `${updated.name} (updated)`;
-          }
-          currentData[idx] = updated;
-          newState = {
-            ...newState,
-            entityData: { ...newState.entityData, [targetEntity]: currentData },
-            activeNav: targetNavId || targetEntity,
-          };
-          action = {
-            type: 'api_call',
-            description: `Updated ${entityDef.displayName.replace(/s$/, '').toLowerCase()}: ${updated.name}`,
-            payload: { entity: targetEntity, data: currentData },
-          };
-          return {
-            reply: `I updated ${updated.name} in ${entityDef.displayName.toLowerCase()}.`,
-            action,
-            newState: { ...newState, firstActionDone: true },
-          };
-        }
-      }
-      return {
-        reply: `Which ${entityDef.displayName.replace(/s$/, '').toLowerCase()} would you like to update? Give me a name.`,
-        newState: { ...newState, firstActionDone: true },
-      };
-    }
+        description: `Created ${entityName.slice(0, -1)}: ${name}`,
+        payload: { entity: entityName, data, newItem },
+      },
+      newState: {
+        ...newState,
+        entityData: { ...newState.entityData, [entityName]: data },
+        activeNav: entityName,
+        firstActionDone: true,
+      },
+    };
   }
 
-  if (targetNavId && !targetEntity) {
-    newState = { ...newState, activeNav: targetNavId };
+  if (toolName.startsWith('delete_')) {
+    const entityName = toolName.replace('delete_', '');
+    const name = (params.name as string) || '';
+    const data = [...(newState.entityData[entityName] || [])];
+    const idx = data.findIndex((row) =>
+      String(row.name || '').toLowerCase().includes(name.toLowerCase())
+    );
+    if (idx >= 0) {
+      const removed = data.splice(idx, 1)[0];
+      return {
+        reply: `I deleted ${removed.name} from ${entityName}.`,
+        action: {
+          type: 'api_call',
+          description: `Deleted ${entityName.slice(0, -1)}: ${removed.name}`,
+          payload: { entity: entityName, data },
+        },
+        newState: {
+          ...newState,
+          entityData: { ...newState.entityData, [entityName]: data },
+          activeNav: entityName,
+          firstActionDone: true,
+        },
+      };
+    }
     return {
-      reply: `I navigated to the ${template.navItems.find((n) => n.id === targetNavId)?.label} section. What would you like to do?`,
-      action: {
-        type: 'navigate',
-        description: `Opened ${template.navItems.find((n) => n.id === targetNavId)?.label}`,
-        payload: { navId: targetNavId },
-      },
+      reply: `I couldn't find a ${entityName.slice(0, -1)} named ${name}.`,
       newState: { ...newState, firstActionDone: true },
     };
   }
 
-  // Fallback — count as a miss
-  const fallbackReply = `I'm not sure how to help with that in ${template.productName}. Try asking me to show your ${template.entities[0].displayName.toLowerCase()}, create a new ${template.entities[0].displayName.replace(/s$/, '').toLowerCase()}, or ask "what can you do?"`;
-  return {
-    reply: fallbackReply,
-    newState: { ...newState, agentMisses: newState.agentMisses + 1 },
-  };
-}
-
-function extractName(message: string): string | null {
-  const patterns = [
-    /(?:for|named?|called)\s+([A-Z][a-zA-Z\s]+?)(?:\s+(?:at|from|in|with|under|to|as)|$)/,
-    /(?:\b[a-z]+\s+)([A-Z][a-zA-Z\s]+?)(?:\s+(?:to|as|from|at)|$)/,
-    /'([^']+)'/,
-    /"([^"]+)"/,
-  ];
-  for (const p of patterns) {
-    const m = message.match(p);
-    if (m && m[1] && m[1].trim().length > 1) {
-      return m[1].trim();
+  if (toolName.startsWith('update_')) {
+    const entityName = toolName.replace('update_', '');
+    const name = (params.name as string) || '';
+    const newStatus = params.status as string | undefined;
+    const data = [...(newState.entityData[entityName] || [])];
+    const idx = data.findIndex((row) =>
+      String(row.name || '').toLowerCase().includes(name.toLowerCase())
+    );
+    if (idx >= 0) {
+      const updated = { ...data[idx] };
+      if (newStatus) updated.status = newStatus;
+      else updated.name = `${updated.name} (updated)`;
+      data[idx] = updated;
+      return {
+        reply: `I updated ${updated.name} in ${entityName}.`,
+        action: {
+          type: 'api_call',
+          description: `Updated ${entityName.slice(0, -1)}: ${updated.name}`,
+          payload: { entity: entityName, data },
+        },
+        newState: {
+          ...newState,
+          entityData: { ...newState.entityData, [entityName]: data },
+          activeNav: entityName,
+          firstActionDone: true,
+        },
+      };
     }
+    return {
+      reply: `I couldn't find a ${entityName.slice(0, -1)} named ${name}.`,
+      newState: { ...newState, firstActionDone: true },
+    };
   }
-  return null;
-}
 
-function extractStatusFilter(lower: string): string | null {
-  const m = lower.match(/\b(active|open|closed|pending|new|draft|archived|high|low|medium|standard|premium)\b/);
-  return m ? m[1] : null;
-}
+  if (toolName === 'navigate') {
+    const section = (params.section as string) || 'Dashboard';
+    const navId = section.toLowerCase().replace(/\s+/g, '');
+    return {
+      reply: `I navigated to the ${section} section.`,
+      action: {
+        type: 'navigate',
+        description: `Opened ${section}`,
+        payload: { navId },
+      },
+      newState: {
+        ...newState,
+        activeNav: navId,
+        firstActionDone: true,
+      },
+    };
+  }
 
-function extractStatusChange(message: string): string | null {
-  const lower = message.toLowerCase();
-  const m = lower.match(/\bto\s+(active|open|closed|pending|new|draft|archived|high|low|medium)\b/);
-  return m ? m[1] : null;
+  // Unknown tool — fall back
+  return processMessageRegex(originalMessage, state);
 }
