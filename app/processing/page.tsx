@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { getTemplate } from '@/lib/templates';
 import { generateTemplateFromUrl } from '@/lib/crawl';
-import { Template } from '@/lib/types';
+import { generateTemplateFromSpec } from '@/lib/openapi';
 
 const templateSteps = [
   { label: 'Crawling your product...', duration: 3000 },
@@ -24,14 +24,26 @@ const urlSteps = [
   { label: 'Your agent is ready', duration: 500 },
 ];
 
+const specSteps = [
+  { label: 'Parsing OpenAPI spec...', duration: 2000 },
+  { label: 'Extracting endpoints...', duration: 2000 },
+  { label: 'Mapping schemas to entities...', duration: 2000 },
+  { label: 'Generating agent tools...', duration: 2000 },
+  { label: 'Spinning up sandbox...', duration: 1500 },
+  { label: 'Your agent is ready', duration: 500 },
+];
+
 function ProcessingContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const templateId = searchParams.get('template');
   const url = searchParams.get('url');
-  const steps = url ? urlSteps : templateSteps;
+  const spec = searchParams.get('spec');
+
+  const steps = spec ? specSteps : url ? urlSteps : templateSteps;
   const [stepIndex, setStepIndex] = useState(0);
   const [productName, setProductName] = useState<string>('');
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (templateId) {
@@ -45,14 +57,31 @@ function ProcessingContent() {
       } catch {
         setProductName('Your Product');
       }
+    } else if (spec) {
+      try {
+        const doc = JSON.parse(spec);
+        const title = doc.info?.title || 'API Product';
+        setProductName(title.replace(/API|Docs|Specification/gi, '').trim() || 'Your API');
+      } catch {
+        setProductName('Your API');
+      }
     }
-  }, [templateId, url]);
+  }, [templateId, url, spec]);
 
   useEffect(() => {
     if (stepIndex >= steps.length - 1) {
       const timer = setTimeout(() => {
         if (url) {
           const generated = generateTemplateFromUrl(url);
+          localStorage.setItem(`crow-template-${generated.id}`, JSON.stringify(generated));
+          router.push(`/demo?template=${generated.id}`);
+        } else if (spec) {
+          const decoded = decodeURIComponent(spec);
+          const generated = generateTemplateFromSpec(decoded);
+          if (!generated) {
+            setError('Could not parse OpenAPI spec. Please check the JSON and try again.');
+            return;
+          }
           localStorage.setItem(`crow-template-${generated.id}`, JSON.stringify(generated));
           router.push(`/demo?template=${generated.id}`);
         } else if (templateId) {
@@ -67,10 +96,27 @@ function ProcessingContent() {
       setStepIndex((i) => i + 1);
     }, steps[stepIndex].duration);
     return () => clearTimeout(timer);
-  }, [stepIndex, templateId, url, router, steps]);
+  }, [stepIndex, templateId, url, spec, router, steps]);
 
-  if (!templateId && !url) {
+  if (!templateId && !url && !spec) {
     return <div className="p-8 text-sm text-gray-500">Invalid input</div>;
+  }
+
+  if (error) {
+    return (
+      <div className="flex h-screen w-full flex-col items-center justify-center bg-white px-6">
+        <div className="max-w-md text-center">
+          <h1 className="text-xl font-semibold text-gray-900">Something went wrong</h1>
+          <p className="mt-2 text-sm text-red-600">{error}</p>
+          <button
+            onClick={() => router.push('/')}
+            className="mt-6 rounded-lg bg-gray-900 px-5 py-2 text-sm font-medium text-white hover:bg-gray-800"
+          >
+            Back to start
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
