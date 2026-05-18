@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import Link from 'next/link';
 import { Template, Message } from '@/lib/types';
 
 interface Props {
@@ -58,12 +59,15 @@ export default function ChatPanel({ template, messages, onSend, firstActionDone 
       </div>
 
       {firstActionDone && (
-        <div className="mx-4 mb-2 rounded-md border border-green-200 bg-green-50 px-3 py-2">
+        <Link
+          href="/contact"
+          className="mx-4 mb-2 block rounded-md border border-green-200 bg-green-50 px-3 py-2 transition-colors hover:bg-green-100"
+        >
           <p className="text-xs text-green-800">
             This is running on real Crow infrastructure. Add it to your product
             in under a week →
           </p>
-        </div>
+        </Link>
       )}
 
       <div className="px-4 pb-2">
