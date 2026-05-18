@@ -1,5 +1,6 @@
 'use client';
 
+import { Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { getTemplate } from '@/lib/templates';
@@ -12,7 +13,7 @@ const steps = [
   { label: 'Your agent is ready', duration: 500 },
 ];
 
-export default function ProcessingPage() {
+function ProcessingContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const templateId = searchParams.get('template') || 'crm';
@@ -76,5 +77,13 @@ export default function ProcessingPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ProcessingPage() {
+  return (
+    <Suspense fallback={<div className="h-screen w-full bg-white" />}>
+      <ProcessingContent />
+    </Suspense>
   );
 }

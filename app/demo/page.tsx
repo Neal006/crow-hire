@@ -1,5 +1,6 @@
 'use client';
 
+import { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useState, useEffect, useCallback } from 'react';
 import { getTemplate, createInitialState } from '@/lib/templates';
@@ -8,11 +9,11 @@ import { SessionState, Message } from '@/lib/types';
 import MockProduct from '@/components/MockProduct';
 import ChatPanel from '@/components/ChatPanel';
 
-export default function DemoPage() {
+function DemoContent() {
   const searchParams = useSearchParams();
   const templateId = searchParams.get('template') || 'crm';
   const urlSession = searchParams.get('session');
-  const [sessionId, setSessionId] = useState(urlSession || `s-${Math.random().toString(36).slice(2, 9)}`);
+  const [sessionId] = useState(urlSession || `s-${Math.random().toString(36).slice(2, 9)}`);
   const [state, setState] = useState<SessionState | null>(null);
 
   useEffect(() => {
@@ -98,5 +99,13 @@ export default function DemoPage() {
         />
       </div>
     </div>
+  );
+}
+
+export default function DemoPage() {
+  return (
+    <Suspense fallback={<div className="h-screen w-full bg-white" />}>
+      <DemoContent />
+    </Suspense>
   );
 }
